@@ -12,8 +12,9 @@
 2. [Dashboard](#dashboard)
 3. [Integrations](#integrations)
 4. [Reports](#reports)
-5. [Error Handling](#error-handling)
-6. [Rate Limiting](#rate-limiting)
+5. [Billing](#billing)
+6. [Error Handling](#error-handling)
+7. [Database Seed Data](#database-seed-data)
 
 ---
 
@@ -46,15 +47,6 @@ All API endpoints (except auth endpoints) require authentication via JWT token.
     createdAt: Date;
   }
 }
-```
-
-**Example:**
-```typescript
-const result = await trpc.auth.register.mutate({
-  email: 'user@example.com',
-  password: 'securepassword123',
-  name: 'John Doe'
-});
 ```
 
 ### Get Current User
@@ -117,28 +109,15 @@ await signIn('google', {
 **Response:**
 ```typescript
 {
-  totalSpend: number;         // Total ad spend
-  totalRevenue: number;       // Total revenue generated
-  totalImpressions: number;   // Total ad impressions
-  totalClicks: number;        // Total clicks
-  totalConversions: number;   // Total conversions
-  averageRoas: number;        // Return on ad spend (revenue/spend)
-  averageCtr: number;         // Click-through rate (clicks/impressions * 100)
-  averageCpc: number;         // Cost per click (spend/clicks)
+  totalSpend: number;
+  totalRevenue: number;
+  totalImpressions: number;
+  totalClicks: number;
+  totalConversions: number;
+  averageRoas: number;
+  averageCtr: number;
+  averageCpc: number;
 }
-```
-
-**Example:**
-```typescript
-const metrics = await trpc.dashboard.overview.useQuery({
-  dateRange: {
-    start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-    end: new Date().toISOString(),
-  }
-});
-
-console.log(`Total Revenue: $${metrics.totalRevenue}`);
-console.log(`ROAS: ${metrics.averageRoas.toFixed(2)}x`);
 ```
 
 ### Get Campaigns List
@@ -176,27 +155,11 @@ console.log(`ROAS: ${metrics.averageRoas.toFixed(2)}x`);
     ctr: number;
     cpc: number;
   }>;
-  total: number;  // Total count (for pagination)
+  total: number;
 }
 ```
 
-**Example:**
-```typescript
-const { data } = trpc.dashboard.campaigns.useQuery({
-  dateRange: {
-    start: '2026-01-01T00:00:00Z',
-    end: '2026-02-03T23:59:59Z',
-  },
-  limit: 20,
-  offset: 0,
-});
-
-data.campaigns.forEach(campaign => {
-  console.log(`${campaign.name}: ${campaign.roas.toFixed(2)}x ROAS`);
-});
-```
-
-### Get Daily Metrics (for Charts)
+### Get Daily Metrics
 
 **Endpoint:** `dashboard.dailyMetrics`  
 **Type:** Query  
@@ -215,25 +178,13 @@ data.campaigns.forEach(campaign => {
 **Response:**
 ```typescript
 Array<{
-  date: string;          // YYYY-MM-DD
+  date: string;
   spend: number;
   revenue: number;
   roas: number;
   impressions: number;
   clicks: number;
 }>
-```
-
-**Example:**
-```typescript
-const chartData = await trpc.dashboard.dailyMetrics.useQuery({
-  dateRange: {
-    start: '2026-01-04T00:00:00Z',
-    end: '2026-02-03T00:00:00Z',
-  }
-});
-
-// Use with Recharts or any charting library
 ```
 
 ---
@@ -264,15 +215,6 @@ Array<{
 }>
 ```
 
-**Example:**
-```typescript
-const integrations = await trpc.integrations.list.useQuery();
-
-integrations.forEach(integration => {
-  console.log(`${integration.platform}: ${integration.isActive ? 'Active' : 'Inactive'}`);
-});
-```
-
 ### Get Integration by ID
 
 **Endpoint:** `integrations.getById`  
@@ -282,11 +224,40 @@ integrations.forEach(integration => {
 **Input:**
 ```typescript
 {
-  id: string;  // Integration ID
+  id: string;
 }
 ```
 
-**Response:** Same as single item from `list`
+### Initiate OAuth Flow
+
+**Endpoint:** `integrations.initiateOAuth`  
+**Type:** Mutation  
+**Auth Required:** Yes
+
+**Input:**
+```typescript
+{
+  platform: 'google-ads' | 'meta' | 'shopify';
+  shopDomain?: string;  // Required for Shopify only
+}
+```
+
+**Response:**
+```typescript
+{
+  authUrl: string;  // Redirect user to this URL
+}
+```
+
+**Example:**
+```typescript
+const result = await trpc.integrations.initiateOAuth.mutate({
+  platform: 'google-ads'
+});
+
+// Redirect user to OAuth URL
+window.location.href = result.authUrl;
+```
 
 ### Disconnect Integration
 
@@ -297,7 +268,7 @@ integrations.forEach(integration => {
 **Input:**
 ```typescript
 {
-  id: string;  // Integration ID
+  id: string;
 }
 ```
 
@@ -317,7 +288,7 @@ integrations.forEach(integration => {
 **Input:**
 ```typescript
 {
-  id: string;  // Integration ID
+  id: string;
 }
 ```
 
@@ -365,17 +336,17 @@ Array<{
 **Input:**
 ```typescript
 {
-  id: string;  // Report ID
+  id: string;
 }
 ```
-
-**Response:** Same as single item from `list`
 
 ### Generate New Report
 
 **Endpoint:** `reports.generate`  
 **Type:** Mutation  
 **Auth Required:** Yes
+
+**Description:** Generates a report with AI-powered insights using Claude 3.5 Sonnet.
 
 **Input:**
 ```typescript
@@ -398,10 +369,198 @@ Array<{
     start: string;
     end: string;
   };
-  insights: any | null;
+  insights: {
+    summary: string;
+    performance_analysis: {
+      best_performers: Array<{
+        campaign: string;
+        reason: string;
+      }>;
+      underperformers: Array<{
+        campaign: string;
+        issues: string[];
+      }>;
+    };
+    optimization_suggestions: Array<{
+      campaign: string;
+      suggestion: string;
+      priority: 'high' | 'medium' | 'low';
+      expected_impact: string;
+    }>;
+    trends: {
+      spend_trend: string;
+      revenue_trend: string;
+      roas_trend: string;
+    };
+    recommendations: string[];
+  } | null;
   pdfUrl: string | null;
   createdAt: Date;
   updatedAt: Date;
+}
+```
+
+### Generate PDF
+
+**Endpoint:** `reports.generatePDF`  
+**Type:** Mutation  
+**Auth Required:** Yes
+
+**Description:** Generates a PDF version of the report using Puppeteer.
+
+**Input:**
+```typescript
+{
+  reportId: string;
+}
+```
+
+**Response:**
+```typescript
+{
+  success: boolean;
+  pdfUrl: string;  // Base64 data URL (production: S3 URL)
+}
+```
+
+**Example:**
+```typescript
+// Generate report first
+const report = await trpc.reports.generate.mutate({
+  name: 'Monthly Report',
+  dateRange: {
+    start: '2026-01-01',
+    end: '2026-01-31'
+  }
+});
+
+// Then generate PDF
+const pdf = await trpc.reports.generatePDF.mutate({
+  reportId: report.id
+});
+
+// Download PDF
+const link = document.createElement('a');
+link.href = pdf.pdfUrl;
+link.download = 'report.pdf';
+link.click();
+```
+
+---
+
+## 💳 Billing
+
+### Get Pricing Plans
+
+**Endpoint:** `billing.getPlans`  
+**Type:** Query  
+**Auth Required:** Yes
+
+**Response:**
+```typescript
+Array<{
+  id: 'FREE' | 'STARTER' | 'PRO';
+  name: string;
+  price: number;  // Monthly price in cents
+  features: string[];
+}>
+```
+
+**Plans:**
+- **Free:** $0/month - Up to 2 integrations
+- **Starter:** $49/month - Up to 5 integrations, auto-sync
+- **Pro:** $199/month - Unlimited integrations, AI insights, API access
+
+### Get Current Subscription
+
+**Endpoint:** `billing.getSubscription`  
+**Type:** Query  
+**Auth Required:** Yes
+
+**Response:**
+```typescript
+{
+  id: string;
+  userId: string;
+  planId: 'FREE' | 'STARTER' | 'PRO';
+  status: 'active' | 'canceled' | 'past_due';
+  stripeCustomerId: string | null;
+  stripeSubscriptionId: string | null;
+  currentPeriodEnd: Date;
+  canceledAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+} | null
+```
+
+### Create Checkout Session
+
+**Endpoint:** `billing.createCheckout`  
+**Type:** Mutation  
+**Auth Required:** Yes
+
+**Description:** Creates a Stripe checkout session for upgrading/subscribing.
+
+**Input:**
+```typescript
+{
+  planId: 'STARTER' | 'PRO';  // FREE doesn't need checkout
+}
+```
+
+**Response:**
+```typescript
+{
+  sessionId: string;
+  url: string;  // Redirect user to this Stripe checkout URL
+}
+```
+
+**Example:**
+```typescript
+const checkout = await trpc.billing.createCheckout.mutate({
+  planId: 'PRO'
+});
+
+// Redirect to Stripe checkout
+window.location.href = checkout.url;
+```
+
+### Create Billing Portal Session
+
+**Endpoint:** `billing.createPortal`  
+**Type:** Mutation  
+**Auth Required:** Yes
+
+**Description:** Creates a Stripe billing portal session for managing subscription.
+
+**Response:**
+```typescript
+{
+  url: string;  // Redirect user to Stripe billing portal
+}
+```
+
+**Example:**
+```typescript
+const portal = await trpc.billing.createPortal.mutate();
+
+// Redirect to Stripe portal
+window.location.href = portal.url;
+```
+
+### Cancel Subscription
+
+**Endpoint:** `billing.cancelSubscription`  
+**Type:** Mutation  
+**Auth Required:** Yes
+
+**Description:** Cancels the current subscription.
+
+**Response:**
+```typescript
+{
+  success: boolean;
 }
 ```
 
@@ -437,20 +596,9 @@ try {
 
 ---
 
-## 🚦 Rate Limiting
-
-**Status:** Not yet implemented
-
-**Planned:**
-- 100 requests per minute per user
-- 1000 requests per hour per user
-- Burst limit: 20 requests per second
-
----
-
 ## 🔄 Database Seed Data
 
-For testing, use the seed script to populate the database:
+For testing, use the seed script:
 
 ```bash
 npx tsx prisma/seed.ts
@@ -463,12 +611,43 @@ npx tsx prisma/seed.ts
 
 ---
 
+## 🚀 OAuth Callback URLs
+
+Configure these URLs in your OAuth provider settings:
+
+- **Google Ads:** `http://localhost:3001/api/oauth/google-ads/callback`
+- **Meta Ads:** `http://localhost:3001/api/oauth/meta/callback`
+- **Shopify:** `http://localhost:3001/api/oauth/shopify/callback`
+
+For production, replace `localhost:3001` with your API domain.
+
+---
+
+## 🔧 Background Jobs
+
+The API uses BullMQ for background data synchronization:
+
+**Run Worker:**
+```bash
+npm run worker
+```
+
+**Job Types:**
+- Data sync from Google Ads
+- Data sync from Meta Ads
+- Data sync from Shopify
+- Scheduled recurring syncs (every 6 hours)
+
+---
+
 ## 📝 Notes
 
 - All dates should be in ISO 8601 format
 - All monetary values are in USD (cents for Stripe)
 - Timestamps are in UTC
-- tRPC provides automatic type inference - no need for manual type definitions in the frontend
+- tRPC provides automatic type inference
+- AI insights powered by Claude 3.5 Sonnet
+- PDFs generated with Puppeteer
 
 ---
 
