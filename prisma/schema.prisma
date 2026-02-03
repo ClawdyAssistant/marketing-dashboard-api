@@ -1,0 +1,144 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String        @id @default(cuid())
+  email         String        @unique
+  name          String?
+  passwordHash  String?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+  
+  accounts      Account[]
+  integrations  Integration[]
+  reports       Report[]
+  subscription  Subscription?
+}
+
+model Account {
+  id                 String  @id @default(cuid())
+  userId             String
+  type               String  // oauth, email, etc.
+  provider           String  // google, credentials
+  providerAccountId  String
+  refresh_token      String? @db.Text
+  access_token       String? @db.Text
+  expires_at         Int?
+  token_type         String?
+  scope              String?
+  id_token           String? @db.Text
+  session_state      String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Integration {
+  id            String    @id @default(cuid())
+  userId        String
+  platform      String    // 'google-ads', 'meta', 'shopify'
+  accountId     String    // External account ID
+  accountName   String?
+  accessToken   String    @db.Text
+  refreshToken  String?   @db.Text
+  tokenExpiry   DateTime?
+  isActive      Boolean   @default(true)
+  lastSync      DateTime?
+  syncStatus    String    @default("pending") // 'pending', 'syncing', 'completed', 'error'
+  syncError     String?   @db.Text
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaigns     Campaign[]
+  
+  @@unique([userId, platform, accountId])
+  @@index([userId])
+}
+
+model Campaign {
+  id              String    @id @default(cuid())
+  integrationId   String
+  externalId      String    // Campaign ID from platform
+  name            String
+  platform        String    // 'google-ads', 'meta', 'shopify'
+  status          String    // 'active', 'paused', 'ended'
+  dailyBudget     Float?
+  totalSpend      Float?
+  impressions     Int?
+  clicks          Int?
+  conversions     Int?
+  revenue         Float?
+  lastUpdated     DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  
+  integration     Integration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  metrics         Metric[]
+  
+  @@unique([integrationId, externalId])
+  @@index([integrationId])
+}
+
+model Metric {
+  id          String    @id @default(cuid())
+  campaignId  String
+  date        DateTime  @db.Date
+  spend       Float
+  impressions Int
+  clicks      Int
+  conversions Int
+  revenue     Float?
+  ctr         Float?    // Click-through rate
+  cpc         Float?    // Cost per click
+  cpa         Float?    // Cost per acquisition
+  roas        Float?    // Return on ad spend
+  createdAt   DateTime  @default(now())
+  
+  campaign    Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  
+  @@unique([campaignId, date])
+  @@index([campaignId])
+  @@index([date])
+}
+
+model Report {
+  id          String    @id @default(cuid())
+  userId      String
+  name        String
+  dateRange   Json      // { start, end }
+  insights    Json?     // AI-generated insights from AI service
+  pdfUrl      String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@index([userId])
+}
+
+model Subscription {
+  id                    String    @id @default(cuid())
+  userId                String    @unique
+  plan                  String    @default("free") // 'free', 'starter', 'pro', 'agency'
+  stripeCustomerId      String?   @unique
+  stripeSubscriptionId  String?   @unique
+  status                String    @default("active") // 'active', 'canceled', 'past_due', 'trialing'
+  currentPeriodStart    DateTime?
+  currentPeriodEnd      DateTime?
+  cancelAtPeriodEnd     Boolean   @default(false)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
