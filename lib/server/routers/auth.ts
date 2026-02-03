@@ -1,5 +1,6 @@
 import { router, publicProcedure, protectedProcedure } from '../trpc';
 import { z } from 'zod';
+import bcrypt from 'bcryptjs';
 
 export const authRouter = router({
   // Get current user
@@ -7,7 +8,7 @@ export const authRouter = router({
     return ctx.user;
   }),
   
-  // Register (placeholder)
+  // Register new user
   register: publicProcedure
     .input(z.object({
       email: z.string().email(),
@@ -15,8 +16,32 @@ export const authRouter = router({
       name: z.string().optional(),
     }))
     .mutation(async ({ input, ctx }) => {
-      // TODO: Hash password, create user
-      // For now, just return success
-      return { success: true, message: 'Registration endpoint (TODO)' };
+      // Check if user exists
+      const existingUser = await ctx.prisma.user.findUnique({
+        where: { email: input.email }
+      });
+      
+      if (existingUser) {
+        throw new Error('User already exists');
+      }
+      
+      // Hash password
+      const passwordHash = await bcrypt.hash(input.password, 10);
+      
+      // Create user
+      const user = await ctx.prisma.user.create({
+        data: {
+          email: input.email,
+          name: input.name,
+          passwordHash,
+        },
+        select: {
+          id: true,
+          email: true,
+          name: true,
+        }
+      });
+      
+      return { success: true, user };
     }),
 });

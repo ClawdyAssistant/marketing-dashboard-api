@@ -1,12 +1,12 @@
 import { prisma } from '@/lib/prisma';
-import { type NextRequest } from 'next/server';
+import { auth } from '@/lib/auth';
 
-export async function createContext(req?: NextRequest) {
-  // TODO: Get user from session/JWT token
-  // For now, return basic context
+export async function createContext() {
+  const session = await auth();
+  
   return {
     prisma,
-    user: null, // Will be populated from auth middleware
+    user: session?.user || null,
   };
 }
 
