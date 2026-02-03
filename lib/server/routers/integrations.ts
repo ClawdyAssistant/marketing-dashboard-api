@@ -1,6 +1,9 @@
 import { router, protectedProcedure } from '../trpc';
 import { z } from 'zod';
 import { addSyncJob } from '../../lib/queue';
+import { getAuthUrl as getGoogleAdsAuthUrl } from '../../lib/integrations/google-ads';
+import { getAuthUrl as getMetaAuthUrl } from '../../lib/integrations/meta';
+import { getAuthUrl as getShopifyAuthUrl } from '../../lib/integrations/shopify';
 
 export const integrationsRouter = router({
   // List user integrations
@@ -27,6 +30,41 @@ export const integrationsRouter = router({
           userId,
         }
       });
+    }),
+
+  // Initiate OAuth flow
+  initiateOAuth: protectedProcedure
+    .input(z.object({
+      platform: z.enum(['google-ads', 'meta', 'shopify']),
+      shopDomain: z.string().optional(), // Required for Shopify
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const userId = ctx.user?.id;
+      if (!userId) throw new Error('Unauthorized');
+
+      let authUrl: string;
+
+      switch (input.platform) {
+        case 'google-ads':
+          authUrl = getGoogleAdsAuthUrl(userId);
+          break;
+        
+        case 'meta':
+          authUrl = getMetaAuthUrl(userId);
+          break;
+        
+        case 'shopify':
+          if (!input.shopDomain) {
+            throw new Error('Shop domain is required for Shopify');
+          }
+          authUrl = getShopifyAuthUrl(userId, input.shopDomain);
+          break;
+        
+        default:
+          throw new Error('Invalid platform');
+      }
+
+      return { authUrl };
     }),
   
   // Disconnect integration
