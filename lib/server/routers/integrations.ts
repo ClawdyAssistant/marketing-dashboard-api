@@ -1,5 +1,6 @@
 import { router, protectedProcedure } from '../trpc';
 import { z } from 'zod';
+import { addSyncJob } from '../../lib/queue';
 
 export const integrationsRouter = router({
   // List user integrations
@@ -43,23 +44,39 @@ export const integrationsRouter = router({
       return { success: true };
     }),
 
-  // Trigger manual sync
+  // Trigger manual sync (uses job queue)
   sync: protectedProcedure
     .input(z.object({ id: z.string() }))
     .mutation(async ({ input, ctx }) => {
       const userId = ctx.user?.id;
       if (!userId) throw new Error('Unauthorized');
       
+      // Get integration details
+      const integration = await ctx.prisma.integration.findFirst({
+        where: {
+          id: input.id,
+          userId,
+        }
+      });
+      
+      if (!integration) {
+        throw new Error('Integration not found');
+      }
+      
       // Update sync status
       await ctx.prisma.integration.update({
         where: { id: input.id },
         data: {
           syncStatus: 'syncing',
-          lastSync: new Date(),
         },
       });
       
-      // TODO: Trigger background job for actual sync
+      // Add job to queue
+      await addSyncJob({
+        integrationId: integration.id,
+        userId: userId,
+        platform: integration.platform as 'google-ads' | 'meta' | 'shopify',
+      });
       
       return { success: true, message: 'Sync started' };
     }),
