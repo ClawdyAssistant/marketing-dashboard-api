@@ -1,7 +1,7 @@
 # API Documentation - Marketing ROI Dashboard Backend
 
 **Last Updated:** February 3, 2026  
-**Version:** 0.9.0 (90% Complete)  
+**Version:** 1.0.0 (100% Complete)  
 **Base URL:** `http://localhost:3001` (dev) | `https://api.dashboard.example.com` (prod)
 
 ---
