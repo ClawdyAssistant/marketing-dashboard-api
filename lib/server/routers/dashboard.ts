@@ -166,4 +166,68 @@ export const dashboardRouter = router({
         total,
       };
     }),
+
+  // Get daily performance metrics for charts
+  dailyMetrics: protectedProcedure
+    .input(z.object({
+      dateRange: z.object({
+        start: z.string(),
+        end: z.string(),
+      }),
+    }))
+    .query(async ({ input, ctx }) => {
+      const userId = ctx.user?.id;
+      if (!userId) throw new Error('Unauthorized');
+
+      const startDate = new Date(input.dateRange.start);
+      const endDate = new Date(input.dateRange.end);
+
+      // Get all metrics grouped by date
+      const metrics = await ctx.prisma.metric.findMany({
+        where: {
+          date: {
+            gte: startDate,
+            lte: endDate,
+          },
+          campaign: {
+            integration: {
+              userId,
+            }
+          }
+        },
+        orderBy: {
+          date: 'asc',
+        },
+        include: {
+          campaign: true,
+        }
+      });
+
+      // Group by date and aggregate
+      const dailyData = new Map<string, { spend: number; revenue: number; impressions: number; clicks: number }>();
+
+      metrics.forEach(metric => {
+        const dateKey = metric.date.toISOString().split('T')[0];
+        const existing = dailyData.get(dateKey) || { spend: 0, revenue: 0, impressions: 0, clicks: 0 };
+        
+        dailyData.set(dateKey, {
+          spend: existing.spend + metric.spend,
+          revenue: existing.revenue + (metric.revenue || 0),
+          impressions: existing.impressions + metric.impressions,
+          clicks: existing.clicks + metric.clicks,
+        });
+      });
+
+      // Convert to array and calculate ROAS
+      return Array.from(dailyData.entries())
+        .map(([date, data]) => ({
+          date,
+          spend: data.spend,
+          revenue: data.revenue,
+          roas: data.spend > 0 ? data.revenue / data.spend : 0,
+          impressions: data.impressions,
+          clicks: data.clicks,
+        }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+    }),
 });
