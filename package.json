@@ -23,6 +23,7 @@
     "ioredis": "^5.4.2",
     "next": "15.1.5",
     "next-auth": "^4.24.11",
+    "puppeteer": "^24.36.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "stripe": "^20.3.0",

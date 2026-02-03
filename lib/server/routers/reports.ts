@@ -1,6 +1,7 @@
 import { router, protectedProcedure } from '../trpc';
 import { z } from 'zod';
 import { aiService } from '../../lib/ai-service';
+import { generateReportPDF } from '../../lib/pdf-generator';
 
 export const reportsRouter = router({
   // List user reports
@@ -132,5 +133,44 @@ export const reportsRouter = router({
       });
       
       return report;
+    }),
+
+  // Generate PDF for a report
+  generatePDF: protectedProcedure
+    .input(z.object({ reportId: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const userId = ctx.user?.id;
+      if (!userId) throw new Error('Unauthorized');
+
+      // Verify user owns this report
+      const report = await ctx.prisma.report.findFirst({
+        where: {
+          id: input.reportId,
+          userId,
+        }
+      });
+
+      if (!report) {
+        throw new Error('Report not found');
+      }
+
+      // Generate PDF
+      const pdfBuffer = await generateReportPDF(input.reportId);
+
+      // TODO: Upload to S3 or file storage
+      // For now, we'll return a data URL (not ideal for production)
+      const base64 = pdfBuffer.toString('base64');
+      const dataUrl = `data:application/pdf;base64,${base64}`;
+
+      // Update report with PDF URL
+      await ctx.prisma.report.update({
+        where: { id: input.reportId },
+        data: { pdfUrl: dataUrl },
+      });
+
+      return {
+        success: true,
+        pdfUrl: dataUrl,
+      };
     }),
 });
