@@ -1,5 +1,6 @@
 import { router, protectedProcedure } from '../trpc';
 import { z } from 'zod';
+import { aiService } from '../../lib/ai-service';
 
 export const reportsRouter = router({
   // List user reports
@@ -41,14 +42,92 @@ export const reportsRouter = router({
       const userId = ctx.user?.id;
       if (!userId) throw new Error('Unauthorized');
       
-      // TODO: Fetch campaign data and call AI service for insights
-      // For now, create report without insights
+      const startDate = new Date(input.dateRange.start);
+      const endDate = new Date(input.dateRange.end);
       
+      // Fetch campaign data for AI analysis
+      const campaigns = await ctx.prisma.campaign.findMany({
+        where: {
+          integration: {
+            userId,
+          }
+        },
+        include: {
+          integration: {
+            select: {
+              platform: true,
+            }
+          },
+          metrics: {
+            where: {
+              date: {
+                gte: startDate,
+                lte: endDate,
+              }
+            }
+          }
+        }
+      });
+      
+      // Aggregate metrics for each campaign
+      const campaignData = campaigns.map(campaign => {
+        let totalSpend = 0;
+        let totalRevenue = 0;
+        let totalImpressions = 0;
+        let totalClicks = 0;
+        let totalConversions = 0;
+
+        campaign.metrics.forEach(metric => {
+          totalSpend += metric.spend;
+          totalRevenue += metric.revenue || 0;
+          totalImpressions += metric.impressions;
+          totalClicks += metric.clicks;
+          totalConversions += metric.conversions;
+        });
+
+        const roas = totalSpend > 0 ? totalRevenue / totalSpend : 0;
+        const ctr = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : 0;
+        const cpc = totalClicks > 0 ? totalSpend / totalClicks : 0;
+
+        return {
+          campaignName: campaign.name,
+          platform: campaign.integration.platform,
+          dateRange: input.dateRange,
+          metrics: {
+            spend: totalSpend,
+            revenue: totalRevenue,
+            impressions: totalImpressions,
+            clicks: totalClicks,
+            conversions: totalConversions,
+            roas,
+            ctr,
+            cpc,
+          }
+        };
+      });
+      
+      let insights = null;
+      
+      // Only call AI service if we have campaign data
+      if (campaignData.length > 0) {
+        try {
+          insights = await aiService.getInsights({
+            campaigns: campaignData,
+            dateRange: input.dateRange,
+          });
+        } catch (error) {
+          console.error('Failed to get AI insights:', error);
+          // Continue without insights - don't fail the report generation
+        }
+      }
+      
+      // Create report with insights
       const report = await ctx.prisma.report.create({
         data: {
           userId,
           name: input.name,
           dateRange: input.dateRange,
+          insights: insights ? JSON.stringify(insights) : null,
         }
       });
       
